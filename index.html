@@ -72,12 +72,28 @@ body{
 .itemrow .lbl small{display:block;color:var(--cw-grey);font-size:10px}
 .itemrow input.qty{width:70px;padding:6px;border:2px solid var(--cw-border);border-radius:6px;text-align:center;font-family:inherit;font-size:13px}
 .itemrow input.qty:focus{outline:none;border-color:var(--cw-red)}
+.itemrow input.rate{width:88px;padding:6px;border:2px dashed var(--cw-border);border-radius:6px;text-align:right;font-family:inherit;font-size:12px;color:var(--cw-black);background:#fcfcfc}
+.itemrow input.rate:focus{outline:none;border-color:var(--cw-teal);border-style:solid}
+.itemrow input.rate.ov{border-color:var(--cw-teal);border-style:solid;background:#eefafa;font-weight:700}
+.ratehint{font-size:10.5px;color:var(--cw-grey);background:var(--cw-light);border-radius:6px;padding:8px 12px;margin-bottom:12px;line-height:1.5}
+.pt-rates{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px;background:var(--cw-light);border-radius:8px;padding:12px}
+.pt-rates .pr label{display:block;font-size:9.5px;font-weight:700;color:var(--cw-grey);margin-bottom:3px}
+.pt-rates .pr input{width:100%;padding:6px;border:2px dashed var(--cw-border);border-radius:6px;text-align:right;font-family:inherit;font-size:12px;background:#fff}
+.pt-rates .pr input.ov{border-color:var(--cw-teal);border-style:solid;background:#eefafa;font-weight:700}
 .itemrow .each{width:88px;text-align:right;font-size:11.5px;color:var(--cw-grey)}
 .itemrow .ext{width:88px;text-align:right;font-size:12.5px;font-weight:700}
 .chipset{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
 .chip{padding:7px 13px;border:2px solid var(--cw-border);border-radius:18px;font-size:12px;cursor:pointer;user-select:none;background:#fff}
 .chip:hover{border-color:var(--cw-grey)}
 .chip.sel{background:var(--cw-black);color:#fff;border-color:var(--cw-black);font-weight:700}
+.unitchip{display:inline-flex;align-items:center;gap:8px;padding:7px 12px;border:2px solid var(--cw-border);border-radius:18px;font-size:12px;background:#fff;cursor:pointer;margin:0 6px 6px 0}
+.unitchip:hover{border-color:var(--cw-teal)}
+.unitchip b{color:var(--cw-red)}
+.unitchip .x{color:var(--cw-grey);font-weight:700;cursor:pointer;padding:0 2px}
+.unitchip .x:hover{color:var(--cw-red)}
+.unitchip.editing{border-color:var(--cw-teal);background:#eefafa;font-weight:700;cursor:default}
+.addunit{background:var(--cw-teal);color:#fff;border:none;border-radius:18px;padding:8px 16px;font-family:inherit;font-weight:700;font-size:12px;cursor:pointer}
+.addunit:hover{background:#088f92}
 .inclbox{background:var(--cw-light);border-left:4px solid var(--cw-teal);padding:10px 14px;border-radius:6px;font-size:11.5px;color:var(--cw-grey);margin-top:12px;line-height:1.6}
 .inclbox b{color:var(--cw-black)}
 .summarywrap{position:sticky;top:86px}
@@ -220,6 +236,10 @@ table.pq td{padding:6px 8px;border-bottom:1px solid var(--cw-border)}
           <div class="field"><label>Unit Number</label><input type="text" id="unitNum" placeholder="e.g. 2145" oninput="autosaveSoon()"></div>
           <div class="field"><label>Quote Date</label><input type="date" id="qdate"></div>
         </div>
+        <div class="field" style="margin-top:14px"><label>Units on This Quote</label>
+          <div id="unitsBar"></div>
+          <small>Price the unit below, then Add to This Quote to build a multi-unit quote. Click a saved unit to edit it again.</small>
+        </div>
         <div class="field" style="margin-top:14px"><label>Unit Type</label>
           <div class="chipset" id="unitChips"></div>
         </div>
@@ -236,6 +256,7 @@ table.pq td{padding:6px 8px;border-bottom:1px solid var(--cw-border)}
 
       <div class="section">
         <h2>Turn Services</h2>
+        <div class="ratehint">Every line shows quantity, then the client rate. Rates prefill from the Rate Book for the selected region and margin mode. Type over any rate to override it for this quote, for example when a small unit needs a higher $/SF. Overridden rates turn teal and save with your work.</div>
         <div id="svcCards"></div>
       </div>
     </div>
@@ -486,7 +507,7 @@ var CAT_META = [
 
 /* ---------------- state ---------------- */
 var S = {
-  unitType:'2x2', cond:'normal', svcOn:{}, qty:{},
+  unitType:'2x2', cond:'normal', svcOn:{}, qty:{}, ov:{}, units:[],
   clean:{ type:'standard', addons:{} },
   paint:{ scope:'none', coats:1, colorChange:false, primer:false, ceilings:false, trim:false, accents:0, extraColors:0, doors:0, sfOverride:null }
 };
@@ -496,6 +517,13 @@ var currentUser = '';
 var currentId = null;
 var autosaveTimer = null;
 
+var TURN_HOOK='https://script.google.com/macros/s/AKfycbzfNnrpidCbWB1DeUNgXvRhDFMQgApfpn-3C9GU45wMEHcJpWFl8ZQVo6PUBSRfEVfRdg/exec';
+function setOv(k,v){
+  var n=parseFloat(v);
+  if(v===''||isNaN(n)||n<0) delete S.ov[k]; else S.ov[k]=n;
+  var el=document.getElementById('ov-'+k); if(el) el.classList.toggle('ov', S.ov[k]!=null);
+  recalc();
+}
 /* ---------------- helpers ---------------- */
 function $(id){ return document.getElementById(id); }
 function num(id){ var v=parseFloat($(id).value); return isNaN(v)?0:v; }
@@ -524,18 +552,22 @@ function toClient(cost){ var m=getMargin(); return cost*getVol()/(1-m); }
    returns {cats:[{id,label,lines:[{label,qty,unit,cost,client}],cost,client}], total, cost, hours}
 ------------------------------------------------- */
 function calcTurn(cfg){
-  var out = { cats:[], total:0, cost:0, hours:0 };
+  var out = { cats:[], total:0, cost:0, hours:0, clientSum:0 };
   var condM = 1;
   CONDITIONS.forEach(function(c){ if(c.id===cfg.cond) condM=c.mult; });
   var lw = loadedWage(cfg.reg);
 
+  var ov = cfg.ov || {};
   function pushCat(id,label,lines){
-    var filtered = lines.filter(function(l){ return l.cost>0.004; });
+    var filtered = lines.filter(function(l){ return l.cost>0.004 || l.clientFixed>0.004; });
     if(!filtered.length) return;
-    var c=0; filtered.forEach(function(l){ c+=l.cost; });
-    var cat = { id:id, label:label, lines:filtered, cost:c, client:toClient(c) };
-    filtered.forEach(function(l){ l.client=toClient(l.cost); });
-    out.cats.push(cat); out.cost+=c;
+    var c=0, cl=0;
+    filtered.forEach(function(l){
+      l.client = (l.clientFixed!=null) ? l.clientFixed : toClient(l.cost);
+      c+=l.cost; cl+=l.client;
+    });
+    var cat = { id:id, label:label, lines:filtered, cost:c, client:cl };
+    out.cats.push(cat); out.cost+=c; out.clientSum+=cl;
   }
 
   /* cleaning */
@@ -543,12 +575,13 @@ function calcTurn(cfg){
     var deep = cfg.clean.type==='deep';
     var hrs = (1.5 + 0.8*cfg.beds + 0.7*cfg.baths + cfg.sf/1500) * (deep?1.6:1) * condM;
     var lines = [];
-    lines.push({ label:(deep?'Deep Clean':'Standard Turn Clean')+' ('+hrs.toFixed(1)+' crew hrs)', qty:1, unit:'ea', cost:hrs*lw });
+    var hrOv = ov.cleanHr;
+    lines.push({ label:(deep?'Deep Clean':'Standard Turn Clean')+' ('+hrs.toFixed(1)+' crew hrs)', qty:1, unit:'ea', cost:hrs*lw, clientFixed:(hrOv!=null? hrs*hrOv : null) });
     CLEAN_ADDONS.forEach(function(a){
       if(deep && a.deepIncl) return;
       if(cfg.clean.addons[a.k]){
         var ah = a.hrs*condM;
-        lines.push({ label:a.label, qty:1, unit:'ea', cost:ah*lw });
+        lines.push({ label:a.label, qty:1, unit:'ea', cost:ah*lw, clientFixed:(hrOv!=null? ah*hrOv : null) });
         hrs += ah;
       }
     });
@@ -557,53 +590,52 @@ function calcTurn(cfg){
   }
   /* trash */
   if(cfg.svcOn.trash){
-    pushCat('trash','Trash-Out',[
-      { label:RATES.toBag.label, qty:cfg.qty.toBag||0, unit:'bag', cost:(cfg.qty.toBag||0)*effCost('toBag',cfg.reg) },
-      { label:RATES.toFurn.label, qty:cfg.qty.toFurn||0, unit:'ea', cost:(cfg.qty.toFurn||0)*effCost('toFurn',cfg.reg) },
-      { label:RATES.toHaul.label, qty:cfg.qty.toHaul||0, unit:'ea', cost:(cfg.qty.toHaul||0)*effCost('toHaul',cfg.reg) }
-    ]);
+    pushCat('trash','Trash-Out',['toBag','toFurn','toHaul'].map(function(k){
+      var q=cfg.qty[k]||0;
+      return { label:RATES[k].label, qty:q, unit:RATES[k].unit, cost:q*effCost(k,cfg.reg), clientFixed:(ov[k]!=null&&q>0? q*ov[k] : null) };
+    }));
   }
   /* carpet */
   if(cfg.svcOn.carpet){
     var lines=[], base=0;
     var csf = cfg.qty.cpSf||0, crooms = cfg.qty.cpRooms||0;
-    if(csf>0){ var c1=csf*effCost('cpHweSf',cfg.reg)*condM; base+=c1; lines.push({label:'Carpet Steam Clean (HWE)', qty:csf, unit:'sf', cost:c1}); }
-    else if(crooms>0){ var c2=crooms*effCost('cpHweRoom',cfg.reg)*condM; base+=c2; lines.push({label:'Carpet Steam Clean', qty:crooms, unit:'room', cost:c2}); }
+    if(csf>0){ var c1=csf*effCost('cpHweSf',cfg.reg)*condM; base+=c1; lines.push({label:'Carpet Steam Clean (HWE)', qty:csf, unit:'sf', cost:c1, clientFixed:(ov.cpHweSf!=null? csf*ov.cpHweSf*condM : null)}); }
+    else if(crooms>0){ var c2=crooms*effCost('cpHweRoom',cfg.reg)*condM; base+=c2; lines.push({label:'Carpet Steam Clean', qty:crooms, unit:'room', cost:c2, clientFixed:(ov.cpHweRoom!=null? crooms*ov.cpHweRoom*condM : null)}); }
     ['cpEnzyme','cpDeo','cpSpot','cpPatch'].forEach(function(k){
-      var q=cfg.qty[k]||0; if(q>0){ var c=q*effCost(k,cfg.reg); base+=c; lines.push({label:RATES[k].label, qty:q, unit:RATES[k].unit, cost:c}); }
+      var q=cfg.qty[k]||0; if(q>0){ var c=q*effCost(k,cfg.reg); base+=c; lines.push({label:RATES[k].label, qty:q, unit:RATES[k].unit, cost:c, clientFixed:(ov[k]!=null? q*ov[k] : null)}); }
     });
     var st=cfg.qty.cpStretchRooms||0;
-    if(st>0){ var c3=effCost('cpStretch',cfg.reg)+Math.max(0,st-1)*effCost('cpStretchA',cfg.reg); base+=c3; lines.push({label:'Carpet Stretch', qty:st, unit:'room', cost:c3}); }
+    if(st>0){ var c3=effCost('cpStretch',cfg.reg)+Math.max(0,st-1)*effCost('cpStretchA',cfg.reg); base+=c3; lines.push({label:'Carpet Stretch', qty:st, unit:'room', cost:c3, clientFixed:(ov.cpStretch!=null? ov.cpStretch+Math.max(0,st-1)*ov.cpStretch*0.6 : null)}); }
     var minC = effCost('cpMin',cfg.reg);
     if(base>0 && base<minC) lines.push({label:'Carpet Visit Minimum Adjustment', qty:1, unit:'ea', cost:minC-base});
     pushCat('carpet','Carpet Care',lines);
   }
   /* floors */
   if(cfg.svcOn.floor){
-    pushCat('floor','Hard Floor Care',[
-      { label:RATES.flScrub.label, qty:cfg.qty.flScrub||0, unit:'sf', cost:(cfg.qty.flScrub||0)*effCost('flScrub',cfg.reg) },
-      { label:RATES.flGrout.label, qty:cfg.qty.flGrout||0, unit:'sf', cost:(cfg.qty.flGrout||0)*effCost('flGrout',cfg.reg) },
-      { label:RATES.flStrip.label, qty:cfg.qty.flStrip||0, unit:'sf', cost:(cfg.qty.flStrip||0)*effCost('flStrip',cfg.reg) }
-    ]);
+    pushCat('floor','Hard Floor Care',['flScrub','flGrout','flStrip'].map(function(k){
+      var q=cfg.qty[k]||0;
+      return { label:RATES[k].label, qty:q, unit:'sf', cost:q*effCost(k,cfg.reg), clientFixed:(ov[k]!=null&&q>0? q*ov[k] : null) };
+    }));
   }
   /* painting */
   if(cfg.svcOn.paint && cfg.paint.scope!=='none'){
     var psf = (cfg.paint.sfOverride!=null && cfg.paint.sfOverride>0) ? cfg.paint.sfOverride : cfg.sf;
     var lines=[];
+    function pfix(k,q){ return ov[k]!=null ? q*ov[k] : null; }
     if(cfg.paint.scope==='touch'){
       var c=Math.max(psf*effCost('ptTouch',cfg.reg), effCost('ptTouchMin',cfg.reg));
-      lines.push({label:'Touch-Up Paint, Standard Color ('+psf+' SF area)', qty:psf, unit:'sf', cost:c});
+      lines.push({label:'Touch-Up Paint, Standard Color ('+psf+' SF area)', qty:psf, unit:'sf', cost:c, clientFixed:pfix('ptTouch',psf)});
     } else {
-      lines.push({label:'Full Repaint, Walls, 1 Coat ('+psf+' SF area)', qty:psf, unit:'sf', cost:psf*effCost('ptWalls',cfg.reg)});
+      lines.push({label:'Full Repaint, Walls, 1 Coat ('+psf+' SF area)', qty:psf, unit:'sf', cost:psf*effCost('ptWalls',cfg.reg), clientFixed:pfix('ptWalls',psf)});
       var coats2 = cfg.paint.coats===2 || cfg.paint.colorChange;
-      if(coats2) lines.push({label:cfg.paint.colorChange?'Color Change, Second Coat':'Second Coat', qty:psf, unit:'sf', cost:psf*effCost('ptCoat2',cfg.reg)});
-      if(cfg.paint.ceilings) lines.push({label:'Ceilings', qty:psf, unit:'sf', cost:psf*effCost('ptCeil',cfg.reg)});
-      if(cfg.paint.trim) lines.push({label:'Baseboards & Trim', qty:psf, unit:'sf', cost:psf*effCost('ptTrim',cfg.reg)});
+      if(coats2) lines.push({label:cfg.paint.colorChange?'Color Change, Second Coat':'Second Coat', qty:psf, unit:'sf', cost:psf*effCost('ptCoat2',cfg.reg), clientFixed:pfix('ptCoat2',psf)});
+      if(cfg.paint.ceilings) lines.push({label:'Ceilings', qty:psf, unit:'sf', cost:psf*effCost('ptCeil',cfg.reg), clientFixed:pfix('ptCeil',psf)});
+      if(cfg.paint.trim) lines.push({label:'Baseboards & Trim', qty:psf, unit:'sf', cost:psf*effCost('ptTrim',cfg.reg), clientFixed:pfix('ptTrim',psf)});
     }
-    if(cfg.paint.primer) lines.push({label:'Stain-Block Primer', qty:psf, unit:'sf', cost:psf*effCost('ptPrimer',cfg.reg)});
-    if(cfg.paint.accents>0) lines.push({label:'Accent Wall', qty:cfg.paint.accents, unit:'ea', cost:cfg.paint.accents*effCost('ptAccent',cfg.reg)});
-    if(cfg.paint.extraColors>0) lines.push({label:'Additional Colors', qty:cfg.paint.extraColors, unit:'ea', cost:cfg.paint.extraColors*effCost('ptColor',cfg.reg)});
-    if(cfg.paint.doors>0) lines.push({label:'Paint Doors, Jambs & Trim', qty:cfg.paint.doors, unit:'ea', cost:cfg.paint.doors*effCost('ptDoor',cfg.reg)});
+    if(cfg.paint.primer) lines.push({label:'Stain-Block Primer', qty:psf, unit:'sf', cost:psf*effCost('ptPrimer',cfg.reg), clientFixed:pfix('ptPrimer',psf)});
+    if(cfg.paint.accents>0) lines.push({label:'Accent Wall', qty:cfg.paint.accents, unit:'ea', cost:cfg.paint.accents*effCost('ptAccent',cfg.reg), clientFixed:pfix('ptAccent',cfg.paint.accents)});
+    if(cfg.paint.extraColors>0) lines.push({label:'Additional Colors', qty:cfg.paint.extraColors, unit:'ea', cost:cfg.paint.extraColors*effCost('ptColor',cfg.reg), clientFixed:pfix('ptColor',cfg.paint.extraColors)});
+    if(cfg.paint.doors>0) lines.push({label:'Paint Doors, Jambs & Trim', qty:cfg.paint.doors, unit:'ea', cost:cfg.paint.doors*effCost('ptDoor',cfg.reg), clientFixed:pfix('ptDoor',cfg.paint.doors)});
     pushCat('paint','Painting',lines);
   }
   /* simple qty categories */
@@ -613,7 +645,7 @@ function calcTurn(cfg){
     RATE_DEFS.forEach(function(r){
       if(r.cat!==catId) return;
       var q=cfg.qty[r.k]||0;
-      if(q>0) lines.push({label:r.label, qty:q, unit:r.unit, cost:q*effCost(r.k,cfg.reg)});
+      if(q>0) lines.push({label:r.label, qty:q, unit:r.unit, cost:q*effCost(r.k,cfg.reg), clientFixed:(ov[r.k]!=null? q*ov[r.k] : null)});
     });
     /* drywall-only minimum */
     if(catId==='repair' && lines.length && !cfg.svcOn.paint){
@@ -629,7 +661,7 @@ function calcTurn(cfg){
   /* tech hours for misc hourly */
   if(cfg.svcOn.misc && (cfg.qty.msHandy||0)>0) out.hours += cfg.qty.msHandy;
 
-  out.total = toClient(out.cost);
+  out.total = out.clientSum;
   return out;
 }
 /* ---------------- UI build ---------------- */
@@ -690,7 +722,11 @@ function svcBody(c){
 function itemRow(k,label,note,unit){
   return '<div class="itemrow"><div class="lbl">'+esc(label)+(note?'<small>'+esc(note)+'</small>':'')+'</div>'+
     '<input class="qty" type="number" min="0" step="1" id="q-'+k+'" value="'+(S.qty[k]||'')+'" placeholder="0" oninput="setQty(\''+k+'\',this.value)">'+
-    '<div class="each" id="each-'+k+'"></div><div class="ext" id="ext-'+k+'"></div></div>';
+    rateInput(k)+'<div class="ext" id="ext-'+k+'"></div></div>';
+}
+function rateInput(k){
+  var v = S.ov[k]!=null ? S.ov[k] : '';
+  return '<input class="rate'+(v!==''?' ov':'')+'" type="number" min="0" step="0.01" id="ov-'+k+'" value="'+v+'" title="Client rate per '+(RATES[k]?RATES[k].unit:'unit')+'. Prefilled from the Rate Book. Type over it to override for this quote." oninput="setOv(\''+k+'\',this.value)">';
 }
 function cleanBody(){
   var h='<div class="field"><label>Clean Level</label><div class="chipset">'+
@@ -706,6 +742,7 @@ function cleanBody(){
     h+='</div>';
   });
   h+='</div>';
+  h+='<div class="itemrow" style="margin-top:8px"><div class="lbl">Client Hourly Rate Override<small>Blank = wage stack + margin. Type a $/hr to force it for this quote.</small></div>'+rateInput('cleanHr')+'</div>';
   h+='<div class="inclbox"><b>Standard turn clean includes:</b> kitchen counters, sink, stovetop, microwave, cabinet fronts and interiors, appliance exteriors, full bathroom clean with tub and tile scrub, mirrors and fixtures, interior windows and sills, blinds dusted, closets and shelves, doors, frames and switch plates, baseboards wiped, walls spot-cleaned, ceiling fans, floors vacuumed and mopped, and cobweb removal.<br><b>Deep clean adds:</b> inside oven, inside fridge, blinds washed, behind and under appliances, grout scrub, wall wash, and slider tracks.</div>';
   return h;
 }
@@ -729,6 +766,12 @@ function paintBody(){
     '<label style="font-size:12px;display:block;margin:4px 0"><input type="checkbox" '+(p.trim?'checked':'')+' onchange="setPaint(\'trim\',this.checked)"> Baseboards & trim</label>'+
     '<label style="font-size:12px;display:block;margin:4px 0"><input type="checkbox" '+(p.primer?'checked':'')+' onchange="setPaint(\'primer\',this.checked)"> Stain-block primer (smoke, stains, dark colors)</label>'+
     '</div></div>';
+  h+='<div class="pt-rates">';
+  [['ptTouch','Touch-Up $/SF'],['ptWalls','Walls 1 Coat $/SF'],['ptCoat2','2nd Coat $/SF'],['ptCeil','Ceilings $/SF'],['ptPrimer','Primer $/SF'],['ptTrim','Trim $/SF'],['ptAccent','Accent Wall $ ea'],['ptColor','Extra Color $ ea'],['ptDoor','Door $ ea']].forEach(function(a){
+    var v=S.ov[a[0]]!=null?S.ov[a[0]]:'';
+    h+='<div class="pr"><label>'+a[1]+'</label><input type="number" min="0" step="0.01" class="'+(v!==''?'ov':'')+'" id="ov-'+a[0]+'" value="'+v+'" title="Client rate. Blank = book rate." oninput="setOv(\''+a[0]+'\',this.value)"></div>';
+  });
+  h+='</div><small style="display:block;color:var(--cw-grey);font-size:10px;margin-top:5px">Rates prefill from the Rate Book for this region. Type over any of them to override for this quote, for example bump the $/SF on a small unit.</small>';
   h+='<div class="inclbox"><b>Included free:</b> nail holes, small dings, light caulking, and one standard color in flat sheen. Walls run about 2.7 times the room floor area, and the rates here already account for that. <b>Charged separately:</b> patches doorknob-size and up (Wall Repairs), stain-block primer, accent walls, added colors, ceilings, trim, and doors.</div>';
   return h;
 }
@@ -742,16 +785,18 @@ function carpetBody(){
   h+=itemRow('cpSpot',RATES.cpSpot.label,'','room');
   h+='<div class="itemrow"><div class="lbl">Carpet Stretch<small>First room carries the setup, added rooms are cheaper</small></div>'+
      '<input class="qty" type="number" min="0" id="q-cpStretchRooms" value="'+(S.qty.cpStretchRooms||'')+'" placeholder="0" oninput="setQty(\'cpStretchRooms\',this.value)">'+
-     '<div class="each" id="each-cpStretchRooms"></div><div class="ext" id="ext-cpStretchRooms"></div></div>';
+     rateInput('cpStretch')+'<div class="ext" id="ext-cpStretchRooms"></div></div>';
+  h+='<div class="itemrow"><div class="lbl">Steam Clean Rate Overrides<small>Client rate per SF (left) and per room (right). Blank = book rate.</small></div>'+
+     rateInput('cpHweSf')+rateInput('cpHweRoom')+'</div>';
   h+=itemRow('cpPatch',RATES.cpPatch.label,'','ea');
   h+='</div><div class="inclbox"><b>Replace or clean?</b> If carpet is worn to the backing, urine has reached the pad, or it is delaminating, cleaning wastes the money. Quote replacement separately. Heavy and Disaster condition scale the steam clean price automatically.</div>';
   return h;
 }
 function floorBody(){
   var h='';
-  h+='<div class="itemrow"><div class="lbl">'+RATES.flScrub.label+'</div><input class="qty" type="number" min="0" id="q-flScrub" value="'+(S.qty.flScrub||'')+'" placeholder="SF" oninput="setQty(\'flScrub\',this.value)"><div class="each" id="each-flScrub"></div><div class="ext" id="ext-flScrub"></div></div>';
-  h+='<div class="itemrow"><div class="lbl">'+RATES.flGrout.label+'</div><input class="qty" type="number" min="0" id="q-flGrout" value="'+(S.qty.flGrout||'')+'" placeholder="SF" oninput="setQty(\'flGrout\',this.value)"><div class="each" id="each-flGrout"></div><div class="ext" id="ext-flGrout"></div></div>';
-  h+='<div class="itemrow"><div class="lbl">'+RATES.flStrip.label+'</div><input class="qty" type="number" min="0" id="q-flStrip" value="'+(S.qty.flStrip||'')+'" placeholder="SF" oninput="setQty(\'flStrip\',this.value)"><div class="each" id="each-flStrip"></div><div class="ext" id="ext-flStrip"></div></div>';
+  ['flScrub','flGrout','flStrip'].forEach(function(k){
+    h+='<div class="itemrow"><div class="lbl">'+RATES[k].label+'</div><input class="qty" type="number" min="0" id="q-'+k+'" value="'+(S.qty[k]||'')+'" placeholder="SF" oninput="setQty(\''+k+'\',this.value)">'+rateInput(k)+'<div class="ext" id="ext-'+k+'"></div></div>';
+  });
   h+='<div class="inclbox">Standard mop and vacuum is already inside the turn clean. Use these for machine work: scrub for dull LVP and tile, grout deep clean for bathrooms and kitchens, strip and wax only for real VCT.</div>';
   return h;
 }
@@ -771,10 +816,68 @@ function setPaint(k,v){
   recalc();
 }
 
+/* ---------------- multi-unit ---------------- */
+function snapshotUnit(){
+  return JSON.parse(JSON.stringify({
+    unitNum:$('unitNum').value, unitType:S.unitType,
+    beds:num('beds'), baths:num('baths'), sf:num('sf'), cond:S.cond,
+    svcOn:S.svcOn, qty:S.qty, ov:S.ov, clean:S.clean, paint:S.paint
+  }));
+}
+function loadUnitSnap(u){
+  $('unitNum').value=u.unitNum||'';
+  $('beds').value=u.beds; $('baths').value=u.baths; $('sf').value=u.sf;
+  S.unitType=u.unitType||'custom'; S.cond=u.cond||'normal';
+  S.svcOn=u.svcOn||{}; S.qty=u.qty||{}; S.ov=u.ov||{};
+  S.clean=u.clean||{type:'standard',addons:{}}; S.paint=u.paint||S.paint;
+  buildUnitChips(); buildCondChips(); buildSvcCards();
+}
+function unitCfg(u){
+  return { beds:u.beds, baths:u.baths, sf:u.sf, cond:u.cond, reg:regionId(),
+           svcOn:u.svcOn, qty:u.qty, ov:u.ov||{}, clean:u.clean, paint:u.paint };
+}
+function unitLabel(u,i){ return u.unitNum ? 'Unit '+u.unitNum : 'Unit '+(i+1); }
+function addUnit(){
+  var res=calcTurn(currentCfg());
+  if(!res.cats.length){ toast('Price this unit first, then add it'); return; }
+  S.units.push(snapshotUnit());
+  /* next unit starts with a clean service list; keep the floor plan */
+  $('unitNum').value='';
+  S.svcOn={}; S.qty={}; S.ov={}; S.cond='normal';
+  S.clean={type:'standard',addons:{}};
+  S.paint={scope:'none',coats:1,colorChange:false,primer:false,ceilings:false,trim:false,accents:0,extraColors:0,doors:0,sfOverride:null};
+  buildCondChips(); buildSvcCards();
+  renderUnits(); recalc(); toast('Added to this quote. Set up the next unit.');
+}
+function editUnit(i){
+  var cur=snapshotUnit();
+  var res=calcTurn(currentCfg());
+  var target=S.units[i];
+  if(res.cats.length){ S.units[i]=cur; }
+  else { S.units.splice(i,1); }
+  loadUnitSnap(target); renderUnits(); recalc();
+}
+function removeUnit(i,ev){
+  if(ev) ev.stopPropagation();
+  if(!confirm('Remove '+unitLabel(S.units[i],i)+' from this quote?')) return;
+  S.units.splice(i,1); renderUnits(); recalc();
+}
+function renderUnits(){
+  var bar=$('unitsBar'); if(!bar) return;
+  var hh='';
+  S.units.forEach(function(u,i){
+    var t=calcTurn(unitCfg(u)); var tt=t.total>0&&t.total<minJob?minJob:t.total;
+    hh+='<span class="unitchip" onclick="editUnit('+i+')">'+esc(unitLabel(u,i))+' <b>'+fmt(tt)+'</b><span class="x" onclick="removeUnit('+i+',event)">&#10005;</span></span>';
+  });
+  hh+='<span class="unitchip editing">Editing: '+esc($('unitNum').value?('Unit '+$('unitNum').value):'current unit')+'</span> ';
+  hh+='<button class="addunit" onclick="addUnit()">+ Add to This Quote</button>';
+  bar.innerHTML=hh;
+}
+
 /* ---------------- recalc & summary ---------------- */
 function currentCfg(){
   return { beds:num('beds'), baths:num('baths'), sf:num('sf'), cond:S.cond, reg:regionId(),
-           svcOn:S.svcOn, qty:S.qty, clean:S.clean, paint:S.paint };
+           svcOn:S.svcOn, qty:S.qty, ov:S.ov, clean:S.clean, paint:S.paint };
 }
 function recalc(){
   var m=getMargin();
@@ -783,17 +886,36 @@ function recalc(){
   $('gmWarn').style.display = m<0.25 ? 'block':'none';
 
   var reg=regionId();
-  /* per-item each/ext labels */
+  /* rate input placeholders + extended prices, override aware */
+  function ph(k, rate, unit){
+    var el=$('ov-'+k); if(!el) return;
+    el.placeholder = (unit==='sf'||unit==='lf') ? rate.toFixed(2) : String(Math.round(rate));
+    el.classList.toggle('ov', S.ov[k]!=null);
+  }
   RATE_DEFS.forEach(function(r){
-    var e=$('each-'+r.k); if(e) e.textContent = fmtRate(toClient(effCost(r.k,reg)), r.unit);
-    var x=$('ext-'+r.k); if(x){ var q=S.qty[r.k]||0; x.textContent = q>0?fmt(toClient(q*effCost(r.k,reg))):''; }
+    var rate = toClient(effCost(r.k,reg));
+    ph(r.k, rate, r.unit);
+    var x=$('ext-'+r.k); if(x){ var q=S.qty[r.k]||0; var rr=S.ov[r.k]!=null?S.ov[r.k]:rate; x.textContent = q>0?fmt(q*rr):''; }
   });
-  var stEl=$('each-cpStretchRooms');
-  if(stEl) stEl.textContent = fmtRate(toClient(effCost('cpStretch',reg)),'ea')+' first';
+  ph('cleanHr', loadedWage(reg)/(1-m)*getVol(), 'hr');
+  var stX=$('ext-cpStretchRooms');
+  if(stX){ var stq=S.qty.cpStretchRooms||0;
+    var stc = S.ov.cpStretch!=null ? (stq>0? S.ov.cpStretch+Math.max(0,stq-1)*S.ov.cpStretch*0.6:0) : toClient(effCost('cpStretch',reg)+Math.max(0,stq-1)*effCost('cpStretchA',reg));
+    stX.textContent = stq>0?fmt(stc):'';
+  }
 
   var res=calcTurn(currentCfg());
+  /* saved units */
+  var unitRes=S.units.map(function(u,i){
+    var r=calcTurn(unitCfg(u));
+    return { label:unitLabel(u,i), res:r, total:(r.total>0&&r.total<minJob)?minJob:r.total, snap:u };
+  });
   /* summary lines */
   var h='';
+  unitRes.forEach(function(ur){
+    h+='<div class="sline cat"><span class="n">'+esc(ur.label)+' ('+ur.snap.beds+'/'+ur.snap.baths+', '+ur.snap.sf+' SF)</span><span>'+fmt(ur.total)+'</span></div>';
+  });
+  if(unitRes.length) h+='<div class="sline cat"><span class="n">Current Unit'+($('unitNum').value?' ('+esc($('unitNum').value)+')':'')+'</span><span></span></div>';
   res.cats.forEach(function(c){
     h+='<div class="sline cat"><span class="n">'+esc(c.label)+'</span><span>'+fmt(c.client)+'</span></div>';
     c.lines.forEach(function(l){
@@ -809,26 +931,36 @@ function recalc(){
   if(total>0 && total<minJob){
     h+='<div class="sline cat"><span class="n">Minimum Job Adjustment</span><span>'+fmt(minJob-total)+'</span></div>';
     total=minJob;
-    warns+='<div class="warnline">Total bumped to the '+fmt(minJob)+' minimum job charge.</div>';
+    warns+='<div class="warnline">Unit bumped to the '+fmt(minJob)+' minimum job charge.</div>';
+  }
+  var combined=total; unitRes.forEach(function(ur){ combined+=ur.total; });
+  if(unitRes.length){
+    h+='<div class="sline cat" style="border-top:2px solid var(--cw-red)"><span class="n">'+(unitRes.length+(total>0?1:0))+' Units Combined</span><span>'+fmt(combined)+'</span></div>';
+    var nUnits=unitRes.length+(total>0?1:0);
+    if(nUnits>=5 && getVol()===1) warns+='<div class="warnline">'+nUnits+' units on this quote. Consider a volume tier in the top bar.</div>';
   }
   if(S.cond==='disaster') warns+='<div class="warnline">Disaster condition: walk the unit before you commit this number.</div>';
   if(m<0.25) warns+='<div class="warnline">Margin below 25% needs GM sign-off before it goes out.</div>';
   $('sLines').innerHTML = h || '<div class="sline"><span class="n" style="color:#8a8783">Turn on services below to build the quote.</span></div>';
   $('sWarns').innerHTML=warns;
-  $('sTotal').textContent=fmt(total);
-  var sf=num('sf');
-  $('mPsf').textContent = (total>0&&sf>0)?fmt2(total/sf):'$0.00';
-  $('mHours').textContent = res.hours.toFixed(1);
-  $('mSvcs').textContent = res.cats.length;
+  $('sTotal').textContent=fmt(combined);
+  var sf=num('sf'); var allSf=sf; var allHours=res.hours; var allCost=res.cost;
+  unitRes.forEach(function(ur){ allSf+=ur.snap.sf; allHours+=ur.res.hours; allCost+=ur.res.cost; });
+  $('mPsf').textContent = (combined>0&&allSf>0)?fmt2(combined/allSf):'$0.00';
+  $('mHours').textContent = allHours.toFixed(1);
+  $('mSvcs').textContent = res.cats.length + (unitRes.length? ' +'+unitRes.length+'u':'');
   var internal=$('showInternal').checked;
   $('internalBox').classList.toggle('show',internal);
   if(internal){
-    var cost=res.cost*getVol();
+    var cost=allCost*getVol();
     $('iCost').textContent=fmt(cost);
-    $('iMargin').textContent=fmt(total-cost);
-    $('iMarginPct').textContent= total>0?Math.round((total-cost)/total*100)+'%':'0%';
+    $('iMargin').textContent=fmt(combined-cost);
+    $('iMarginPct').textContent= combined>0?Math.round((combined-cost)/combined*100)+'%':'0%';
   }
-  window._lastCalc={res:res,total:total};
+  window._lastCalc={res:res,total:total,unitRes:unitRes,combined:combined};
+  renderUnits();
+  if($('panel-ratebook').classList.contains('active')) buildRateBook();
+  if($('panel-ratecard').classList.contains('active')) buildRateCard();
   autosaveSoon();
 }
 function fmtRate(v,unit){
@@ -962,26 +1094,45 @@ function printShell(title,sub,body){
     body+
     '<div class="p-foot">City Wide Facility Solutions of Las Vegas & Northern Nevada &nbsp;|&nbsp; GoCityWide.com &nbsp;|&nbsp; Prices valid 30 days. Condition beyond the stated level is requoted after walkthrough.</div>';
 }
-function printQuote(internal){
-  var lc=window._lastCalc; if(!lc||!lc.res.cats.length){ toast('Nothing to print yet'); return; }
-  var cfg=currentCfg();
-  var b='<div style="font-size:12px;margin-bottom:8px"><b>'+esc($('account').value||'Property')+'</b>'+
-    ($('unitNum').value?' &nbsp;|&nbsp; Unit '+esc($('unitNum').value):'')+
-    ' &nbsp;|&nbsp; '+cfg.beds+' BR / '+cfg.baths+' BA, '+cfg.sf+' SF &nbsp;|&nbsp; Condition: '+esc(S.cond.charAt(0).toUpperCase()+S.cond.slice(1))+
-    ' &nbsp;|&nbsp; '+esc(REGIONS[cfg.reg].label)+'</div>';
+function unitBlock(label, meta, r, unitTotal, internal){
+  var b='<div style="font-size:12.5px;font-weight:700;margin-top:14px;border-top:2px solid #2D2A26;padding-top:8px">'+esc(label)+' <span style="font-weight:400;color:#636466">'+esc(meta)+'</span></div>';
   b+='<table class="pq"><tr><th>Service</th><th>Qty</th>'+(internal?'<th>Crew Cost</th>':'')+'<th>Price</th></tr>';
-  lc.res.cats.forEach(function(c){
+  r.cats.forEach(function(c){
     b+='<tr><td colspan="'+(internal?4:3)+'" style="background:#f5f5f5;font-weight:700">'+esc(c.label)+'</td></tr>';
     c.lines.forEach(function(l){
       b+='<tr><td style="padding-left:18px">'+esc(l.label)+'</td><td>'+(l.qty||1)+'</td>'+
          (internal?'<td>'+fmt(l.cost*getVol())+'</td>':'')+'<td>'+fmt(l.client)+'</td></tr>';
     });
   });
-  if(lc.total>lc.res.total) b+='<tr><td colspan="'+(internal?3:2)+'">Minimum job adjustment</td><td>'+fmt(lc.total-lc.res.total)+'</td></tr>';
-  b+='</table><div class="p-total">Total: '+fmt(lc.total)+'</div>';
+  if(unitTotal>r.total) b+='<tr><td colspan="'+(internal?3:2)+'">Minimum job adjustment</td><td>'+fmt(unitTotal-r.total)+'</td></tr>';
+  b+='</table><div style="text-align:right;font-weight:700;margin-top:4px">'+esc(label)+' total: '+fmt(unitTotal)+'</div>';
+  return b;
+}
+function printQuote(internal){
+  var lc=window._lastCalc;
+  if(!lc || (!lc.res.cats.length && !(lc.unitRes&&lc.unitRes.length))){ toast('Nothing to print yet'); return; }
+  var cfg=currentCfg();
+  var multi = lc.unitRes && lc.unitRes.length>0;
+  var b='<div style="font-size:12px;margin-bottom:8px"><b>'+esc($('account').value||'Property')+'</b>'+
+    ' &nbsp;|&nbsp; '+esc(REGIONS[cfg.reg].label)+
+    (multi?' &nbsp;|&nbsp; '+(lc.unitRes.length+(lc.res.cats.length?1:0))+' units':'')+'</div>';
+  if(multi){
+    lc.unitRes.forEach(function(ur){
+      var s=ur.snap;
+      b+=unitBlock(ur.label, s.beds+' BR / '+s.baths+' BA, '+s.sf+' SF, '+s.cond+' condition', ur.res, ur.total, internal);
+    });
+    if(lc.res.cats.length){
+      b+=unitBlock('Unit '+($('unitNum').value||''), cfg.beds+' BR / '+cfg.baths+' BA, '+cfg.sf+' SF, '+S.cond+' condition', lc.res, lc.total, internal);
+    }
+    b+='<div class="p-total">Combined Total ('+(lc.unitRes.length+(lc.res.cats.length?1:0))+' units): '+fmt(lc.combined)+'</div>';
+  } else {
+    b+=unitBlock('Unit '+($('unitNum').value||''), cfg.beds+' BR / '+cfg.baths+' BA, '+cfg.sf+' SF, '+S.cond+' condition', lc.res, lc.total, internal);
+    b+='<div class="p-total">Total: '+fmt(lc.total)+'</div>';
+  }
   if(internal){
-    var cost=lc.res.cost*getVol();
-    b+='<div style="text-align:right;font-size:11px;color:#636466;margin-top:4px">Crew cost '+fmt(cost)+' &nbsp;|&nbsp; Margin '+fmt(lc.total-cost)+' ('+Math.round((lc.total-cost)/lc.total*100)+'%) &nbsp;|&nbsp; '+lc.res.hours.toFixed(1)+' crew hrs &nbsp;|&nbsp; INTERNAL, do not send</div>';
+    var allCost=lc.res.cost; (lc.unitRes||[]).forEach(function(ur){ allCost+=ur.res.cost; });
+    var cost=allCost*getVol(); var tot=lc.combined||lc.total;
+    b+='<div style="text-align:right;font-size:11px;color:#636466;margin-top:4px">Crew cost '+fmt(cost)+' &nbsp;|&nbsp; Margin '+fmt(tot-cost)+' ('+Math.round((tot-cost)/tot*100)+'%) &nbsp;|&nbsp; INTERNAL, do not send</div>';
   }
   b+='<div style="font-size:10.5px;color:#636466;margin-top:14px;line-height:1.6"><b>Included at no charge with painting:</b> nail holes, small dings, scuff prep, light caulking, one standard color in flat sheen. Reglazed surfaces require 24 to 48 hours cure. Trash-out and disaster conditions are verified on site.</div>';
   $('printArea').innerHTML=printShell('Apartment Turn '+(internal?'Worksheet':'Quote'), esc($('account').value||''), b);
@@ -994,17 +1145,28 @@ function printRateCard(){
   window.print();
 }
 function copyQuote(){
-  var lc=window._lastCalc; if(!lc||!lc.res.cats.length){ toast('Nothing to copy yet'); return; }
+  var lc=window._lastCalc;
+  if(!lc || (!lc.res.cats.length && !(lc.unitRes&&lc.unitRes.length))){ toast('Nothing to copy yet'); return; }
   var cfg=currentCfg();
   var t='CITY WIDE FACILITY SOLUTIONS - APARTMENT TURN QUOTE\n';
-  t+=($('account').value||'Property')+($('unitNum').value?' | Unit '+$('unitNum').value:'')+'\n';
-  t+=cfg.beds+' BR / '+cfg.baths+' BA, '+cfg.sf+' SF | Condition: '+S.cond+' | '+REGIONS[cfg.reg].label+'\n\n';
-  lc.res.cats.forEach(function(c){
-    t+=c.label.toUpperCase()+'\n';
-    c.lines.forEach(function(l){ t+='  '+l.label+(l.qty>1?' x'+l.qty:'')+': '+fmt(l.client)+'\n'; });
+  t+=($('account').value||'Property')+' | '+REGIONS[cfg.reg].label+'\n\n';
+  function unitText(label, meta, r, unitTotal){
+    var s=label+' ('+meta+')\n';
+    r.cats.forEach(function(c){
+      s+=c.label.toUpperCase()+'\n';
+      c.lines.forEach(function(l){ s+='  '+l.label+(l.qty>1?' x'+l.qty:'')+': '+fmt(l.client)+'\n'; });
+    });
+    if(unitTotal>r.total) s+='  Minimum job adjustment: '+fmt(unitTotal-r.total)+'\n';
+    s+=label+' TOTAL: '+fmt(unitTotal)+'\n\n';
+    return s;
+  }
+  (lc.unitRes||[]).forEach(function(ur){
+    var sp=ur.snap;
+    t+=unitText(ur.label, sp.beds+' BR / '+sp.baths+' BA, '+sp.sf+' SF, '+sp.cond, ur.res, ur.total);
   });
-  if(lc.total>lc.res.total) t+='Minimum job adjustment: '+fmt(lc.total-lc.res.total)+'\n';
-  t+='\nTOTAL: '+fmt(lc.total)+'\n\nIncluded free with painting: nail holes, small dings, scuff prep, light caulking, one standard color.\nGoCityWide.com';
+  if(lc.res.cats.length) t+=unitText('Unit '+($('unitNum').value||''), cfg.beds+' BR / '+cfg.baths+' BA, '+cfg.sf+' SF, '+S.cond, lc.res, lc.total);
+  if(lc.unitRes && lc.unitRes.length) t+='COMBINED TOTAL: '+fmt(lc.combined)+'\n\n';
+  t+='Included free with painting: nail holes, small dings, scuff prep, light caulking, one standard color.\nGoCityWide.com';
   navigator.clipboard.writeText(t).then(function(){ toast('Quote copied'); },function(){ toast('Copy failed'); });
 }
 
@@ -1012,7 +1174,7 @@ function copyQuote(){
 function collect(){
   return { v:1, account:$('account').value, unitNum:$('unitNum').value, qdate:$('qdate').value,
     beds:num('beds'), baths:num('baths'), sf:num('sf'),
-    unitType:S.unitType, cond:S.cond, svcOn:S.svcOn, qty:S.qty, clean:S.clean, paint:S.paint,
+    unitType:S.unitType, cond:S.cond, svcOn:S.svcOn, qty:S.qty, ov:S.ov, units:S.units, clean:S.clean, paint:S.paint,
     region:regionId(), mode:$('mode').value, override:$('marginOverride').value, volume:$('volume').value,
     user:currentUser, updated:new Date().toISOString() };
 }
@@ -1020,16 +1182,12 @@ function applyState(d){
   $('account').value=d.account||''; $('unitNum').value=d.unitNum||''; $('qdate').value=d.qdate||'';
   $('beds').value=d.beds; $('baths').value=d.baths; $('sf').value=d.sf;
   S.unitType=d.unitType||'custom'; S.cond=d.cond||'normal';
-  S.svcOn=d.svcOn||{}; S.qty=d.qty||{}; S.clean=d.clean||{type:'standard',addons:{}}; S.paint=d.paint||S.paint;
+  S.svcOn=d.svcOn||{}; S.qty=d.qty||{}; S.ov=d.ov||{}; S.units=d.units||[]; S.clean=d.clean||{type:'standard',addons:{}}; S.paint=d.paint||S.paint;
   $('region').value=d.region||'lv'; $('mode').value=d.mode||'competitive';
   $('marginOverride').value=d.override||''; $('volume').value=d.volume||'1';
   buildUnitChips(); buildCondChips(); buildSvcCards(); recalc();
 }
-function saveWork(showToast){
-  if(!currentUser){ changeUser(); if(!currentUser) return; }
-  if(!currentId) currentId='t'+Math.random().toString(36).slice(2,10);
-  var d=collect();
-  var name=(d.account||'Untitled')+(d.unitNum?' #'+d.unitNum:'');
+function localSave(d, name){
   try{
     localStorage.setItem('cwturn_'+currentId,JSON.stringify(d));
     var idx=JSON.parse(localStorage.getItem('cwturn_index')||'[]');
@@ -1037,50 +1195,113 @@ function saveWork(showToast){
     idx.unshift({ id:currentId, name:name, user:currentUser, updated:d.updated });
     localStorage.setItem('cwturn_index',JSON.stringify(idx.slice(0,60)));
     localStorage.setItem('cwturn_current',currentId);
-    if(showToast) toast('Saved: '+name);
-  }catch(e){ if(showToast) toast('Save failed, storage full'); }
+  }catch(e){}
 }
+function cloudSave(d, name, showToast){
+  var lc=window._lastCalc||{};
+  var payload={ kind:'turn_save', id:currentId, user:currentUser, name:name,
+    region:REGIONS[regionId()].label, total:Math.round(lc.total||0), state:d };
+  try{
+    fetch(TURN_HOOK,{ method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'}, body:JSON.stringify(payload) })
+      .then(function(){ if(showToast) toast('Saved to the team Sheet: '+name); })
+      .catch(function(){ if(showToast) toast('Saved on this device only (Sheet unreachable)'); });
+  }catch(e){ if(showToast) toast('Saved on this device only'); }
+}
+function saveWork(showToast){
+  if(!currentUser){ changeUser(); if(!currentUser) return; }
+  if(!currentId) currentId='t'+Math.random().toString(36).slice(2,10);
+  var d=collect();
+  var name=(d.account||'Untitled')+(S.units.length?' ('+(S.units.length+1)+' units)':(d.unitNum?' #'+d.unitNum:''));
+  localSave(d, name);
+  cloudSave(d, name, showToast);
+}
+var cloudTimer=null;
 function autosaveSoon(){
   if(!currentUser) return;
   clearTimeout(autosaveTimer);
-  autosaveTimer=setTimeout(function(){ saveWork(false); },900);
+  autosaveTimer=setTimeout(function(){
+    if(!currentId) return;
+    var d=collect(); localSave(d,(d.account||'Untitled')+(d.unitNum?' #'+d.unitNum:''));
+  },900);
+  clearTimeout(cloudTimer);
+  cloudTimer=setTimeout(function(){
+    if(!currentId) return;
+    var d=collect(); cloudSave(d,(d.account||'Untitled')+(d.unitNum?' #'+d.unitNum:''),false);
+  },12000);
 }
-function openSaves(){
-  var idx=JSON.parse(localStorage.getItem('cwturn_index')||'[]');
+function renderSaves(list, sourceNote){
   var h='';
-  if(!idx.length) h='<div style="color:var(--cw-grey);font-size:12.5px">No saved work yet on this computer. Fill out a quote and it saves itself.</div>';
-  idx.forEach(function(i){
+  if(!list.length) h='<div style="color:var(--cw-grey);font-size:12.5px">No saved quotes yet. Fill one out and hit Save Work.</div>';
+  list.forEach(function(i){
     var d=new Date(i.updated);
-    h+='<div class="saveitem"><div class="inf" onclick="loadWork(\''+i.id+'\')"><b>'+esc(i.name)+'</b><span>'+esc(i.user||'')+' &nbsp;|&nbsp; '+d.toLocaleDateString('en-US')+' '+d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})+'</span></div>'+
+    h+='<div class="saveitem"><div class="inf" onclick="loadWork(\''+i.id+'\')"><b>'+esc(i.name)+(i.total?' <span style="color:var(--cw-red)">'+fmt(i.total)+'</span>':'')+'</b><span>'+esc(i.user||'')+(i.region?' &nbsp;|&nbsp; '+esc(i.region):'')+' &nbsp;|&nbsp; '+d.toLocaleDateString('en-US')+' '+d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})+'</span></div>'+
        '<button class="btn btn-grey" onclick="dupWork(\''+i.id+'\')">Copy</button>'+
        '<button class="btn btn-grey" onclick="delWork(\''+i.id+'\')" style="color:var(--cw-red)">Delete</button></div>';
   });
+  if(sourceNote) h+='<div style="font-size:10.5px;color:var(--cw-grey);margin-top:6px">'+sourceNote+'</div>';
   $('savesList').innerHTML=h;
+}
+function openSaves(){
   $('savesModal').classList.add('show');
+  $('savesList').innerHTML='<div style="color:var(--cw-grey);font-size:12.5px">Loading saved quotes from the team Sheet...</div>';
+  fetch(TURN_HOOK+'?turn=list').then(function(r){ return r.json(); }).then(function(j){
+    if(j && j.ok){ window._cloudSaves=j.quotes||[]; renderSaves(window._cloudSaves,'Stored on the CW Solicitations Google Sheet. Everyone on the team sees the same list.'); }
+    else throw new Error('bad');
+  }).catch(function(){
+    var idx=JSON.parse(localStorage.getItem('cwturn_index')||'[]');
+    window._cloudSaves=null;
+    renderSaves(idx,'Could not reach the Google Sheet. Showing quotes saved on this device.');
+  });
 }
 function closeSaves(){ $('savesModal').classList.remove('show'); }
 function loadWork(id){
-  var raw=localStorage.getItem('cwturn_'+id); if(!raw) return;
+  var raw=localStorage.getItem('cwturn_'+id);
+  if(window._cloudSaves){
+    toast('Loading...');
+    fetch(TURN_HOOK+'?turn='+encodeURIComponent(id)).then(function(r){ return r.json(); }).then(function(j){
+      if(j && j.ok && j.state){
+        currentId=id; localStorage.setItem('cwturn_current',id);
+        applyState(j.state); closeSaves(); toast('Loaded from the team Sheet');
+      } else throw new Error('bad');
+    }).catch(function(){
+      if(raw){ currentId=id; applyState(JSON.parse(raw)); closeSaves(); toast('Loaded local copy'); }
+      else toast('Could not load that quote');
+    });
+    return;
+  }
+  if(!raw) return;
   currentId=id; localStorage.setItem('cwturn_current',id);
   applyState(JSON.parse(raw)); closeSaves(); toast('Loaded');
 }
 function dupWork(id){
+  function fin(d){
+    currentId='t'+Math.random().toString(36).slice(2,10);
+    d.account=(d.account||'Untitled')+' (copy)';
+    applyState(d); saveWork(true); closeSaves();
+  }
+  if(window._cloudSaves){
+    fetch(TURN_HOOK+'?turn='+encodeURIComponent(id)).then(function(r){ return r.json(); }).then(function(j){
+      if(j && j.ok && j.state) fin(j.state); else throw new Error('bad');
+    }).catch(function(){ var raw=localStorage.getItem('cwturn_'+id); if(raw) fin(JSON.parse(raw)); });
+    return;
+  }
   var raw=localStorage.getItem('cwturn_'+id); if(!raw) return;
-  currentId='t'+Math.random().toString(36).slice(2,10);
-  var d=JSON.parse(raw); d.account=(d.account||'Untitled')+' (copy)';
-  applyState(d); saveWork(true); openSaves();
+  fin(JSON.parse(raw));
 }
 function delWork(id){
-  if(!confirm('Delete this saved quote?')) return;
+  if(!confirm('Delete this saved quote for everyone?')) return;
   localStorage.removeItem('cwturn_'+id);
   var idx=JSON.parse(localStorage.getItem('cwturn_index')||'[]').filter(function(i){ return i.id!==id; });
   localStorage.setItem('cwturn_index',JSON.stringify(idx));
   if(currentId===id) currentId=null;
-  openSaves();
+  try{
+    fetch(TURN_HOOK,{ method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain'}, body:JSON.stringify({kind:'turn_save', id:id, del:true}) })
+      .then(function(){ setTimeout(openSaves, 1200); });
+  }catch(e){ openSaves(); }
 }
 function newQuote(){
   currentId=null; localStorage.removeItem('cwturn_current');
-  S={ unitType:'2x2', cond:'normal', svcOn:{}, qty:{},
+  S={ unitType:'2x2', cond:'normal', svcOn:{}, qty:{}, ov:{}, units:[],
       clean:{type:'standard',addons:{}},
       paint:{scope:'none',coats:1,colorChange:false,primer:false,ceilings:false,trim:false,accents:0,extraColors:0,doors:0,sfOverride:null} };
   $('account').value=''; $('unitNum').value='';

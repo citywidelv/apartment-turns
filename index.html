@@ -6,7 +6,7 @@
 <title>City Wide Apartment Turn Calculator</title>
 <style>
 :root{
-  --cw-red:#D22730; --cw-red-dark:#a81e26; --cw-black:#2D2A26; --cw-grey:#636466;
+  --cw-red:#D22730; --cw-red-dark:#B01F27; --cw-black:#2D2A26; --cw-grey:#636466;
   --cw-white:#FFFFFF; --cw-teal:#0AA6A9; --cw-light:#F5F5F5; --cw-border:#E5E5E5;
   --sp-xs:4px; --sp-sm:8px; --sp-md:16px; --sp-lg:24px; --sp-xl:32px;
 }
@@ -170,6 +170,14 @@ table.pq td{padding:6px 8px;border-bottom:1px solid var(--cw-border)}
 .p-total{text-align:right;font-size:16px;font-weight:700;margin-top:12px;color:var(--cw-red)}
 .p-foot{margin-top:26px;border-top:2px solid var(--cw-border);padding-top:10px;font-size:10px;color:var(--cw-grey);text-align:center}
 </style>
+<link rel="stylesheet" href="https://citywidelv.github.io/cw-base.css">
+<script src="https://citywidelv.github.io/cw-ops-desk/cw-auth.js"></script>
+<script>/* Internal tool. One team unlock per device (cw-auth.js). No passcode box here: without a
+   saved passcode this page sends the browser to the hub gate and comes straight back. */
+(function(){ if(!window.CWAuth) return; var hub = /sales-hub/.test(document.referrer||"") ? "sales" : "ops";
+  var p = CWAuth.require({hub:hub}); if(!p){ document.documentElement.style.visibility="hidden"; return; }
+  window.addEventListener("load", function(){ CWAuth.validate(p,"auth").then(function(r){ if(r.ok===false) CWAuth.locked(hub,"Wrong passcode."); }); }); })();
+</script>
 </head>
 <body>
 <div class="container">

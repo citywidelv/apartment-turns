@@ -211,10 +211,8 @@ table.pq td{padding:6px 8px;border-bottom:1px solid var(--cw-border)}
     <div class="cgroup">
       <label>Competitiveness Mode</label>
       <select id="mode" onchange="recalc()">
-        <option value="standard">Standard (35%)</option>
-        <option value="competitive" selected>Competitive (32%)</option>
-        <option value="aggressive">Aggressive (30%)</option>
-        <option value="super">Super Aggressive (25%)</option>
+        <option value="standard">Standard (38%)</option>
+        <option value="competitive" selected>Competitive (35%)</option>
       </select>
     </div>
     <div class="cgroup">
@@ -230,8 +228,8 @@ table.pq td{padding:6px 8px;border-bottom:1px solid var(--cw-border)}
         <option value="0.90">30+ units (10% off)</option>
       </select>
     </div>
-    <div class="cgroup"><label>Active Margin</label><div class="modepill mode-competitive" id="modePill">32%</div></div>
-    <div class="gmwarn" id="gmWarn">Below 25% requires GM approval</div>
+    <div class="cgroup"><label>Active Margin</label><div class="modepill mode-competitive" id="modePill">35%</div></div>
+    <div class="gmwarn" id="gmWarn">Below 35% requires GM approval</div>
   </div>
 
   <!-- ============ UNIT QUOTE TAB ============ -->
@@ -369,7 +367,10 @@ table.pq td{padding:6px 8px;border-bottom:1px solid var(--cw-border)}
 ======================================================================== */
 
 var COST = { burden:0.15, supplies:0.05, icMargin:0.08 };
-var MODES = { standard:0.35, competitive:0.32, aggressive:0.30, super:0.25 };
+/* Cleaning supplies (the 5% above) come from Staples Advantage City Wide Facility Value Items: Coastwide Heavy-Duty Cleaner and Degreaser 65 (Staples #24323033, $69.41),
+   Glance NA glass cleaner (#24527424, $22.74), Coastwide microfiber cloths (#24300450, $16.72/12), Coastwide wet mop heads (#24420784, $7.18), Ammex nitrile gloves (#24474538, $38.41/1,000).
+   Carpet and odor treatments use Coastwide Odor Eliminator Enzyme Plus (#920341, $45.30/4), Coastwide Carpet Spotter 67 (#24425448, $32.82/6) and Diversey BreakDown (#368579, $60.18/4). */
+var MODES = { standard:0.38, competitive:0.35, aggressive:0.35, super:0.35 };  /* never below 35% (TJ, Oct 2026). Aggressive and super kept only so old saves still load. */
 var REGIONS = {
   lv:    { label:'Las Vegas',        wage:14.50, tech:38, mult:1.00 },
   reno:  { label:'Reno / Sparks',    wage:16.50, tech:42, mult:1.08 },
@@ -390,7 +391,7 @@ var CONDITIONS = [
   { id:'heavy',    label:'Heavy',        mult:1.35, note:'Buildup, grease, or pet traffic. Extra crew time on labor services.' },
   { id:'disaster', label:'Disaster',     mult:1.75, note:'Neglected or damaged unit. Walk it before you commit the price.' }
 ];
-var MIN_JOB_DEFAULT = 125;
+var MIN_JOB_DEFAULT = 150;
 
 /* Vendor costs, Las Vegas base. Northern Nevada regions multiply by the regional factor.
    unit: ea, sf, room, lf, hr, bag. mult:false = no regional factor (uses its own regional number). */
@@ -419,14 +420,14 @@ var RATE_DEFS = [
  { k:'rsCounter', cat:'resurf', label:'Countertop Resurface', unit:'lf', cost:38 },
  /* carpet */
  { k:'cpHweSf',   cat:'carpet', label:'Carpet Steam Clean (HWE)', unit:'sf', cost:0.1625 },
- { k:'cpHweRoom', cat:'carpet', label:'Carpet Steam Clean (per room)', unit:'room', cost:30 },
+ { k:'cpHweRoom', cat:'carpet', label:'Carpet Steam Clean (per room)', unit:'room', cost:35 },
  { k:'cpEnzyme',  cat:'carpet', label:'Pet Enzyme Treatment', unit:'room', cost:25 },
  { k:'cpDeo',     cat:'carpet', label:'Deodorizer', unit:'room', cost:12 },
  { k:'cpSpot',    cat:'carpet', label:'Heavy Spot Treatment', unit:'room', cost:20 },
  { k:'cpStretch', cat:'carpet', label:'Carpet Stretch, First Room', unit:'ea', cost:75 },
  { k:'cpStretchA',cat:'carpet', label:'Carpet Stretch, Each Added Room', unit:'ea', cost:45 },
  { k:'cpPatch',   cat:'carpet', label:'Carpet Patch / Repair', unit:'ea', cost:90 },
- { k:'cpMin',     cat:'carpet', label:'Carpet Visit Minimum', unit:'ea', cost:80 },
+ { k:'cpMin',     cat:'carpet', label:'Carpet Visit Minimum', unit:'ea', cost:110 },
  /* hard floors */
  { k:'flScrub',   cat:'floor', label:'Machine Scrub, Vinyl / LVP / Tile', unit:'sf', cost:0.13 },
  { k:'flGrout',   cat:'floor', label:'Tile & Grout Deep Clean', unit:'sf', cost:0.585 },
@@ -554,7 +555,7 @@ function effCost(key, reg){
   if(r.tech) return REGIONS[reg].tech;
   return r.cost * REGIONS[reg].mult;
 }
-function toClient(cost){ var m=getMargin(); return cost*getVol()/(1-m); }
+function toClient(cost){ var m=getMargin(); return Math.max(cost*getVol()/(1-m), cost/0.65); }  /* volume discounts never push margin under 35% */
 
 /* ---------------- pricing engine ----------------
    cfg: {beds, baths, sf, cond, reg, svcOn, qty, clean, paint}
@@ -582,7 +583,7 @@ function calcTurn(cfg){
   /* cleaning */
   if(cfg.svcOn.clean){
     var deep = cfg.clean.type==='deep';
-    var hrs = (1.5 + 0.8*cfg.beds + 0.7*cfg.baths + cfg.sf/1500) * (deep?1.6:1) * condM;
+    var hrs = (2.5 + 0.8*cfg.beds + 0.7*cfg.baths + cfg.sf/1500) * (deep?1.6:1) * condM;
     var lines = [];
     var hrOv = ov.cleanHr;
     lines.push({ label:(deep?'Deep Clean':'Standard Turn Clean')+' ('+hrs.toFixed(1)+' crew hrs)', qty:1, unit:'ea', cost:hrs*lw, clientFixed:(hrOv!=null? hrs*hrOv : null) });
@@ -949,7 +950,7 @@ function recalc(){
     if(nUnits>=5 && getVol()===1) warns+='<div class="warnline">'+nUnits+' units on this quote. Consider a volume tier in the top bar.</div>';
   }
   if(S.cond==='disaster') warns+='<div class="warnline">Disaster condition: walk the unit before you commit this number.</div>';
-  if(m<0.25) warns+='<div class="warnline">Margin below 25% needs GM sign-off before it goes out.</div>';
+  if(m<0.25) warns+='<div class="warnline">Margin below 35% needs GM sign-off before it goes out.</div>';
   $('sLines').innerHTML = h || '<div class="sline"><span class="n" style="color:#8a8783">Turn on services below to build the quote.</span></div>';
   $('sWarns').innerHTML=warns;
   $('sTotal').textContent=fmt(combined);
